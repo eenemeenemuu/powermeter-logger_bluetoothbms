@@ -155,15 +155,7 @@ bool bleCollectPacket(char *data, uint32_t dataSize) // reconstruct packet, call
       
     if(totalDataSize + dataSize > sizeof(packetbuff)){
       Serial.printf("ERROR: datasize is overlength.");
-      
-      MqttDebug(
-        String("ERROR: datasize is overlength. ") + 
-        String("allocated=") +
-        String(sizeof(packetbuff)) + 
-        String(", size=") +
-        String(totalDataSize + dataSize)
-        );
-      
+
       totalDataSize = 0;
       packetstate = 0;
       

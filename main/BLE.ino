@@ -28,7 +28,6 @@ void MyEndOfScanCallback(BLEScanResults pBLEScanResult){
     bms_status=false; // BMS not found
     
     if(BLE_CALLBACK_DEBUG){
-      MqttDebug("BLE: scan finished");
       Serial.println("Scan finished.");
     }
 }
@@ -41,15 +40,6 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks{
 
 
     if(BLE_CALLBACK_DEBUG){
-      MqttDebug(
-          String("BLE: found ") +
-          String(advertisedDevice.getName().c_str()) +
-          String(" with address ") +
-          String(advertisedDevice.getAddress().toString().c_str()) + 
-          String(" and RSSI ") +
-          String(advertisedDevice.getRSSI())        
-        );
-
       Serial.print("BLE: found ");
       Serial.println(advertisedDevice.toString().c_str());
     }
@@ -64,8 +54,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks{
         advertisedDevice.isAdvertisingService(serviceUUID)
       ){
     
-      if(BLE_CALLBACK_DEBUG){      
-        MqttDebug("BLE: target device found");
+      if(BLE_CALLBACK_DEBUG){
       }
       
       pBLEScan->stop();
@@ -81,7 +70,6 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks{
         doConnect = true;        
       }else{
         if(BLE_CALLBACK_DEBUG){
-          MqttDebug("BLE: RSSI of target device below minimum");
         }
       }
     }
@@ -93,7 +81,6 @@ class MyClientCallback : public BLEClientCallbacks{
   void onConnect(BLEClient* pclient){
     
     if(BLE_CALLBACK_DEBUG){
-      MqttDebug(String("BLE: connecting to ") + String(pclient->getPeerAddress().toString().c_str()));
     }
   }
 
@@ -102,7 +89,6 @@ class MyClientCallback : public BLEClientCallbacks{
     doConnect = false;
    
     if(BLE_CALLBACK_DEBUG){
-      MqttDebug(String("BLE: disconnected from ") + String(pclient->getPeerAddress().toString().c_str()));
     }
 
   }
@@ -112,7 +98,6 @@ static void MyNotifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, 
   //this is called when BLE server sents data via notification
   //hexDump((char*)pData, length);
   if(!bleCollectPacket((char *)pData, length)){
-    MqttDebug("ERROR: packet could not be collected.");
   }
 }
 
@@ -131,11 +116,9 @@ void handleBLE(){
     
     if((ble_packets_received == BLE_PACKETSRECEIVED_BEFORE_STANDBY) || (millis()>prev_millis_standby+BLE_TIMEOUT)){    
       if(ble_packets_received == BLE_PACKETSRECEIVED_BEFORE_STANDBY){
-        MqttDebug("BLE: all packets received");
         bms_status=true; // BMS was connected, data up-to-date
         
       }else{
-        MqttDebug("BLE: connection timeout");
         bms_status=false; // BMS not (fully) connected
       }
 
@@ -151,7 +134,6 @@ void handleBLE(){
   
       }else{
         ble_client_connected = false;
-        MqttDebug("BLE: failed to connect");
       }
       
       doConnect = false;
@@ -161,7 +143,6 @@ void handleBLE(){
       // if connected to BLE server, request all data
       if((ble_packets_requested & 0b01)!=0b01){
         // request packet 0b01
-        MqttDebug("BLE: requesting packet 0b01");
         delay(50);
         if(bmsRequestBasicInfo()){
           ble_packets_requested |= 0b01;
@@ -169,7 +150,6 @@ void handleBLE(){
         
       }else if(((ble_packets_received & 0b01)==0b01) && ((ble_packets_requested & 0b10)!=0b10)){
         // request packet 0b10 after 0b01 has been received
-        MqttDebug("BLE: requesting packet 0b10");
         delay(50);
         if(bmsRequestCellInfo()){
           ble_packets_requested |= 0b10;
@@ -178,7 +158,6 @@ void handleBLE(){
       
     }else if ((!doConnect)&&(doScan)){
       // we are not connected, so we can scan for devices
-      MqttDebug("BLE: not connected, starting scan");
       Serial.print("BLE is not connected, starting scan");
 
       // Disconnect client
@@ -193,8 +172,6 @@ void handleBLE(){
       pBLEScan->start(BLE_SCAN_DURATION, MyEndOfScanCallback, false); // non-blocking, use a callback
       
       doScan=false;
-      
-      MqttDebug("BLE: scan started");      
     }
   }
 }
@@ -273,7 +250,6 @@ bool connectToServer(){
   // Connect to the remote BLE Server.
   pClient->connect(pRemoteDevice);
   if(!(pClient->isConnected())){
-    MqttDebug(String("BLE: failed to connect"));
     Serial.println("Failed to connect to server");
     pClient->disconnect();
     return false;   
@@ -285,7 +261,6 @@ bool connectToServer(){
   // Get remote service
   pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr){
-    MqttDebug(String("BLE: failed to find service UUID"));
     Serial.print("Failed to find our service UUID: ");
     Serial.println(serviceUUID.toString().c_str());
     pClient->disconnect();
@@ -297,7 +272,6 @@ bool connectToServer(){
   // Get BMS receive characteristic
   pRemoteCharacteristic_rx = pRemoteService->getCharacteristic(charUUID_rx);
   if (pRemoteCharacteristic_rx == nullptr){
-    MqttDebug(String("BLE: failed to find RX UUID"));
     Serial.print("Failed to find rx UUID: ");
     Serial.println(charUUID_rx.toString().c_str());
     pClient->disconnect();
@@ -310,7 +284,6 @@ bool connectToServer(){
   if (pRemoteCharacteristic_rx->canNotify()){
       pRemoteCharacteristic_rx->registerForNotify(MyNotifyCallback);
   }else{
-    MqttDebug(String("BLE: failed to register notification of remote characteristic"));
     Serial.println("Failed to register notification of remote characteristic");
     pClient->disconnect();
     return false;   
@@ -321,7 +294,6 @@ bool connectToServer(){
   // Get BMS transmit characteristic
   pRemoteCharacteristic_tx = pRemoteService->getCharacteristic(charUUID_tx);
   if (pRemoteCharacteristic_tx == nullptr){
-    MqttDebug(String("BLE: failed to find TX UUID"));
     Serial.print("Failed to find tx UUID: ");
     Serial.println(charUUID_tx.toString().c_str());
     pClient->disconnect();
@@ -332,7 +304,6 @@ bool connectToServer(){
 
   // Check whether tx is writeable
   if (!(pRemoteCharacteristic_tx->canWriteNoResponse())){
-    MqttDebug(String("BLE: failed TX remote characteristic is not writable"));
     Serial.println("Failed TX remote characteristic is not writable");
     pClient->disconnect();
     return false;
@@ -342,8 +313,6 @@ bool connectToServer(){
   
   delay(BLE_REQUEST_DELAY); // wait, otherwise writeValue doesn't work for some reason
                             // to do: fix this ugly hack
-
-  MqttDebug(String("BLE: connected"));
   
   return true;
 }

@@ -1,15 +1,16 @@
 /*
- * Xiaoxiang BMS to MQTT via WiFi
- * by Bas Vermulst - https://github.com/BeaverUI/ESP32-BluetoothBMS2MQTT
+ * Send data of Xiaoxiang BMS to HTTPS server via WiFi
+ * by eenemeenemuu - https://github.com/eenemeenemuu/powermeter-logger_bluetoothbms
  * 
  * Based on original work from https://github.com/kolins-cz/Smart-BMS-Bluetooth-ESP32/blob/master/README.md
+ * Based on further work by Bas Vermulst from https://github.com/BeaverUI/ESP32-BluetoothBMS2MQTT
  * 
  
    === configuring ===
-   Using the #define parameters in the CONFIGURATION section, do the following:
+   Using the #define parameters in the config.h file, do the following:
    1) configure WiFi via WIFI_SSID and WIFI_PASSWORD
-   2) configure MQTT broker via MQTTSERVER
-   3) set unique node name via NODE_NAME
+   2) configure external host
+   3) configue time settings
    4) ensure the BMS settings are OK. You can verify the name and address using the "BLE Scanner" app on an Android phone.
    
 
@@ -17,77 +18,34 @@
    1) Add ESP-WROVER to the board manager:
    - File --> Preferences, add to board manager URLs: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
    - Then, Tools --> Board --> Board manager... --> install ESP32 package v2.0.3 or later.
-   
 
-   2) Install required libraries:
-   - MQTT (by Joel Gaehwiler)
-   Install via "Manage Libraries..." under Tools.
-
-   3) Configure board:
+   2) Configure board:
    Select Tools --> Board --> "ESP32 Arduino" --> "ESP WRover module"
 
-   4) Connect board via USB.
+   3) Connect board via USB.
    
-   5) Configure programming options:
+   4) Configure programming options:
    Select appropriate programming port under Tools --> Port
    Select correct partitioning: 1.9MB app (with OTA) or 2MB app with 2 MB SPIFFS - otherwise it won't fit
 
-   6) Program and go!
+   5) Program and go!
  
  */
  
-// ==== CONFIGURATION ====
-// BMS
-#define BMS_MAX_CELLS 15 // defines size of data types
-#define BMS_POLLING_INTERVAL 10*60*1000 // data output interval (shorter = connect more often = more battery consumption from BMS) in ms
-
-// BLE
-#define BLE_MIN_RSSI -75 // minimum signal strength before connection is attempted
-#define BLE_NAME "xiaoxiang" // name of BMS
-#define BLE_ADDRESS "a4:c1:38:1a:0c:49" // address of BMS
-
-#define BLE_SCAN_DURATION 1 // duration of scan in seconds
-#define BLE_REQUEST_DELAY 500 // package request delay after connecting - make this large enough to have the connection established in ms
-#define BLE_TIMEOUT 10*1000 // timeout of scan + gathering packets (too short will fail collecting all packets) in ms
-
-#define BLE_CALLBACK_DEBUG true // send debug messages via MQTT & serial in callbacks (handy for finding your BMS address, name, RSSI, etc)
-
-// MQTT
-#define MQTTSERVER "192.168.1.11"
-#define MQTT_USERNAME "" // leave empty if no credentials are needed
-#define MQTT_PASSWORD "" 
-#define NODE_NAME "bms2mqtt"
-
-// WiFi
-#define WIFI_SSID "WIFI_SSID"
-#define WIFI_PASSWORD "WIFI_PASSWORD"
-
-// watchdog timeout
-#define WATCHDOG_TIMEOUT (BLE_TIMEOUT+10*1000) // go to sleep after x seconds
-
-
-
-
-
 // ==== MAIN CODE ====
+#include "config.h"
 #include "datatypes.h" // for brevity the BMS stuff is in this file
 #include <WiFi.h> // for WiFi
 #include <BLEDevice.h> // for BLE
-#include <MQTT.h> // for MQTT
 #include <WiFiClient.h> // for MQTT
 
 #include <driver/adc.h> // to read ESP battery voltage
 #include <rom/rtc.h> // to get reset reason
 
 #include <WiFiClientSecure.h>
-const char*  server = "example.com";  // Server URL
 WiFiClientSecure client;
 
 #include "time.h"
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600;
-const int   daylightOffset_sec = 3600;
-
 
 // Init BMS
 static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); //xiaoxiang bms service
@@ -102,13 +60,7 @@ unsigned long bms_last_update_time=0;
 bool bms_status;
 #define BLE_PACKETSRECEIVED_BEFORE_STANDBY 0b11 // packets to gather before disconnecting
 
-
-WiFiClient wificlient_mqtt;
-MQTTClient mqttclient;
-
-
 // Other stuff
-float battery_voltage=0; // internal battery voltage
 String debug_log_string="";
 hw_timer_t * wd_timer = NULL;
 
@@ -134,31 +86,60 @@ void setup(){
   Serial.println("Connected");
   Serial.println("IP address: " + IPAddressString(WiFi.localIP()));
 
-  
-  getEspBatteryVoltage();
+  if(bms_status) {
+    configTime(TIME_gmtOffset_sec, TIME_daylightOffset_sec, TIME_ntpServer);
+    struct tm timeinfo;
+    char date[20];
+    char time[20];
+    if(!getLocalTime(&timeinfo)){
+      Serial.println("Failed to obtain time");
+    } else {
+      strftime(date, 11, "%d.%m.%Y", &timeinfo);
+      strftime(time, 9, "%H:%M:%S", &timeinfo);
+      Serial.println(date);
+      Serial.println(time);
+    }
+    
+    client.setInsecure();
 
+    Serial.println("\nStarting connection to server...");
+    if (!client.connect(EXTERNAL_SERVER, 443))
+      Serial.println("Connection failed!");
+    else {
+      Serial.println("Connected to server!");
+      // Make a HTTP request:
+      Serial.println(String((float)packBasicInfo.CapacityRemainPercent));
+      Serial.println(String((float)packBasicInfo.CapacityRemainAh));
+      Serial.println(String((float)packBasicInfo.Amps));
+      Serial.println(String((float)packBasicInfo.Volts));
+      Serial.println(String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2));
+      client.println(String("GET /") + EXTERNAL_PATH + String("log.php?key=") + EXTERNAL_KEY + String("&stats=") + String(date) + "," + String(time) + "," + String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2) + "," + String((float)packBasicInfo.CapacityRemainPercent,0) + String(" HTTP/1.0"));
+      client.println(String("Host: ") + EXTERNAL_SERVER);
+      client.println("Connection: close");
+      client.println();
 
-  // Start MQTT
-  mqttclient.begin(MQTTSERVER, wificlient_mqtt);
-  mqttclient.onMessage(handleMQTTreceive);
-  MQTTconnect();
-  handleMQTT();
-  
-  MqttDebug("All done, disconnecting.");
+      while (client.connected()) {
+        String line = client.readStringUntil('\n');
+        if (line == "\r") {
+          Serial.println("headers received");
+          break;
+        }
+      }
+      // if there are incoming bytes available
+      // from the server, read them and print them:
+      while (client.available()) {
+        char c = client.read();
+        Serial.write(c);
+      }
+
+      client.stop();
+    }
+  }
 
   Serial.println("All done, disconnecting.");
 
-  // reset error handling
-  bool unexpected_error=false;
-  if((GetResetReason(0) == String("SW_RESET")) || (GetResetReason(0) == String("SW_CPU_RESET"))) {
-    MqttDebug("ERROR: Software-reset of CPU! Something messed up.");
-  }
-
-  MqttPublishDebug();
-
   delay(1000); // give it 1 second to flush everything
   
-  mqttclient.disconnect();
   WiFi.disconnect();
   Serial.flush();
 
@@ -188,118 +169,6 @@ void ARDUINO_ISR_ATTR WatchDogTimeoutHandler()
   esp_sleep_enable_timer_wakeup((BMS_POLLING_INTERVAL - WATCHDOG_TIMEOUT) * 1e3); // standby period is in ms, function accepts us
   esp_deep_sleep_start(); // sweet dreams
 }
-
-
-// read voltage of onboard battery
-void getEspBatteryVoltage(void){
-  adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten(ADC1_CHANNEL_7,ADC_ATTEN_DB_11);
-
-  battery_voltage = ((float) 2*adc1_get_raw(ADC1_CHANNEL_7)*(3.3*1.06/4095));
-}
-
-
-// ===== Handles for MQTT =====
-// handle connection and send messages at intervals
-void handleMQTT(void){
-  if(WiFi.status() != WL_CONNECTED){
-    Serial.println("WiFi disconnected. Reconnecting.");
-  }
-  while(WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(1000);
-  }
-
-  if(bms_status) {
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-    struct tm timeinfo;
-    char date[20];
-    char time[20];
-    if(!getLocalTime(&timeinfo)){
-      Serial.println("Failed to obtain time");
-    } else {
-      strftime(date, 11, "%d.%m.%Y", &timeinfo);
-      strftime(time, 9, "%H:%M:%S", &timeinfo);
-      Serial.println(date);
-      Serial.println(time);
-    }
-    
-    client.setInsecure();
-
-    Serial.println("\nStarting connection to server...");
-    if (!client.connect(server, 443))
-      Serial.println("Connection failed!");
-    else {
-      Serial.println("Connected to server!");
-      // Make a HTTP request:
-      client.println(String("GET /test/log.php?key=test&stats=") + String(date) + "," + String(time) + "," + String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2) + "," + String((float)packBasicInfo.CapacityRemainPercent,0) + String(" HTTP/1.0"));
-      client.println(String("Host: ") + String(server));
-      client.println("Connection: close");
-      client.println();
-
-      while (client.connected()) {
-        String line = client.readStringUntil('\n');
-        if (line == "\r") {
-          Serial.println("headers received");
-          break;
-        }
-      }
-      // if there are incoming bytes available
-      // from the server, read them and print them:
-      while (client.available()) {
-        char c = client.read();
-        Serial.write(c);
-      }
-
-      client.stop();
-    }
-  }
-
-  if (!mqttclient.connected()){
-    MQTTconnect();
-  }
-
-  // Send MQTT message
-  Serial.println("Sending MQTT update");
-
-  mqttclient.publish(GetTopic("ip"), IPAddressString(WiFi.localIP()));
-  mqttclient.publish(GetTopic("free-heap"), String(ESP.getFreeHeap()));
-  mqttclient.publish(GetTopic("maxalloc-heap"), String(xPortGetMinimumEverFreeHeapSize()));
-  mqttclient.publish(GetTopic("ssid"), WiFi.SSID());
-  mqttclient.publish(GetTopic("rssi"), String(WiFi.RSSI()));
-  
-  mqttclient.publish(GetTopic("reset-reason"), String(GetResetReason(0)) + String(" | ") + String(GetResetReason(1)));
-  
-  mqttclient.publish(GetTopic("runtime"), String(millis()/1000));
-  mqttclient.publish(GetTopic("battery-voltage"), String(battery_voltage,2));
-
-  mqttclient.publish(GetTopic("bms-status"), String(bms_status));
-  mqttclient.publish(GetTopic("bms-status-age"), String( (millis()-bms_last_update_time)/1000 ));
-
-  if(bms_status){
-    mqttclient.publish(GetTopic("number-of-cells"), String(packCellInfo.NumOfCells));
-    mqttclient.publish(GetTopic("current"), String((float)packBasicInfo.Amps / 1000,2));
-    mqttclient.publish(GetTopic("voltage"), String((float)packBasicInfo.Volts / 1000,2));
-    if(packCellInfo.NumOfCells != 0){
-      mqttclient.publish(GetTopic("cell-voltage"), String((float)packBasicInfo.Volts /(1000*packCellInfo.NumOfCells), 2));
-    }
-    mqttclient.publish(GetTopic("cell-diff"), String((float)packCellInfo.CellDiff, 0));
-    mqttclient.publish(GetTopic("soc"), String((float)packBasicInfo.CapacityRemainPercent,1));
-
-    mqttclient.publish(GetTopic("temperature-1"), String((float)packBasicInfo.Temp1 / 10,1));
-    mqttclient.publish(GetTopic("temperature-2"), String((float)packBasicInfo.Temp2 / 10,1));
-  }
-
-  MqttPublishDebug();
-  
-  mqttclient.loop();
-}
-
-
-// handler for incoming messages
-void handleMQTTreceive(String &topic, String &payload) {
-}
-
 
 // ===== Helper functions =====
 String GetResetReason(int core)
