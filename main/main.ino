@@ -42,10 +42,8 @@
 #include <driver/adc.h> // to read ESP battery voltage
 #include <rom/rtc.h> // to get reset reason
 
-#include <WiFiClientSecure.h>
-WiFiClientSecure client;
-
-#include "time.h"
+#include <WiFiClientSecure.h> // for HTTPS
+#include "time.h" // to get current time
 
 // Init BMS
 static BLEUUID serviceUUID("0000ff00-0000-1000-8000-00805f9b34fb"); //xiaoxiang bms service
@@ -64,7 +62,6 @@ bool bms_status;
 String debug_log_string="";
 hw_timer_t * wd_timer = NULL;
 
-
 void setup(){
   // use a watchdog to set the sleep timer, this avoids issues with the crashing BLE stack
   // at some point we should smash this bug, but for now this workaround ensures reliable operation
@@ -73,76 +70,81 @@ void setup(){
   Serial.begin(115200);
   
   // connect BLE, gather data from BMS, then disconnect and unload BLE
-  bleGatherPackets();
-  
-  
+  bms_status=false;
+  while (!bms_status) {
+    bleGatherPackets();
+  }
+
   // Start networking
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   // optional: fixed IP address, it is recommended to assign a fixed IP via the DHCP server instead
   // IPAddress ip(192,168,1,31); IPAddress gateway(192,168,1,1); IPAddress subnet(255,255,0,0); WiFi.config(ip, gateway, subnet);
   Serial.print("Attempting to connect to WiFi...");
-  while (WiFi.status() != WL_CONNECTED) {Serial.print("."); delay(1000);} Serial.println("");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(1000);
+  }
+  Serial.println("");
   Serial.println("Connected");
   Serial.println("IP address: " + IPAddressString(WiFi.localIP()));
 
-  if(bms_status) {
-    configTime(TIME_gmtOffset_sec, TIME_daylightOffset_sec, TIME_ntpServer);
-    struct tm timeinfo;
-    char date[20];
-    char time[20];
-    if(!getLocalTime(&timeinfo)){
-      Serial.println("Failed to obtain time");
-    } else {
-      strftime(date, 11, "%d.%m.%Y", &timeinfo);
-      strftime(time, 9, "%H:%M:%S", &timeinfo);
-      Serial.println(date);
-      Serial.println(time);
-    }
-    
-    client.setInsecure();
+  // get current time
+  configTime(TIME_gmtOffset_sec, TIME_daylightOffset_sec, TIME_ntpServer);
+  struct tm timeinfo;
+  char date[20];
+  char time[20];
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+  } else {
+    strftime(date, 11, "%d.%m.%Y", &timeinfo);
+    strftime(time, 9, "%H:%M:%S", &timeinfo);
+    Serial.println("Date: " + String(date));
+    Serial.println("Time: " + String(time));
+
+    WiFiClientSecure https_client;
+    https_client.setInsecure();
 
     Serial.println("\nStarting connection to server...");
-    if (!client.connect(EXTERNAL_SERVER, 443))
+    if (!https_client.connect(EXTERNAL_SERVER, 443)) {
       Serial.println("Connection failed!");
-    else {
+    } else {
       Serial.println("Connected to server!");
       // Make a HTTP request:
+      /*
       Serial.println(String((float)packBasicInfo.CapacityRemainPercent));
       Serial.println(String((float)packBasicInfo.CapacityRemainAh));
       Serial.println(String((float)packBasicInfo.Amps));
       Serial.println(String((float)packBasicInfo.Volts));
       Serial.println(String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2));
-      client.println(String("GET /") + EXTERNAL_PATH + String("log.php?key=") + EXTERNAL_KEY + String("&stats=") + String(date) + "," + String(time) + "," + String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2) + "," + String((float)packBasicInfo.CapacityRemainPercent,0) + String(" HTTP/1.0"));
-      client.println(String("Host: ") + EXTERNAL_SERVER);
-      client.println("Connection: close");
-      client.println();
+      */
+      https_client.println(String("GET /") + EXTERNAL_PATH + String("log.php?key=") + EXTERNAL_KEY + String("&stats=") + String(date) + "," + String(time) + "," + String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2) + "," + String((float)packBasicInfo.CapacityRemainPercent,0) + String(" HTTP/1.0"));
+      https_client.println(String("Host: ") + EXTERNAL_SERVER);
+      https_client.println("Connection: close");
+      https_client.println();
 
-      while (client.connected()) {
-        String line = client.readStringUntil('\n');
+      while (https_client.connected()) {
+        String line = https_client.readStringUntil('\n');
         if (line == "\r") {
-          Serial.println("headers received");
+          //Serial.println("headers received");
           break;
         }
       }
+      /*
       // if there are incoming bytes available
       // from the server, read them and print them:
-      while (client.available()) {
-        char c = client.read();
+      while (https_client.available()) {
+        char c = https_client.read();
         Serial.write(c);
       }
-
-      client.stop();
+      */
+      https_client.stop();
     }
   }
-
   Serial.println("All done, disconnecting.");
-
-  delay(1000); // give it 1 second to flush everything
-  
   WiFi.disconnect();
   Serial.flush();
-
+  delay(1000); // give it 1 second to flush everything
   // done, now we wait for the wdt timer interrupt that puts us in deep sleep
 }
 
