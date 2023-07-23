@@ -111,14 +111,15 @@ void setup(){
     } else {
       Serial.println("Connected to server!");
       // Make a HTTP request:
-      /*
-      Serial.println(String((float)packBasicInfo.CapacityRemainPercent));
-      Serial.println(String((float)packBasicInfo.CapacityRemainAh));
-      Serial.println(String((float)packBasicInfo.Amps));
-      Serial.println(String((float)packBasicInfo.Volts));
-      Serial.println(String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2));
-      */
-      https_client.println(String("GET /") + EXTERNAL_PATH + String("log.php?key=") + EXTERNAL_KEY + String("&stats=") + String(date) + "," + String(time) + "," + String((float)packBasicInfo.Amps*(float)packBasicInfo.Volts/1000/1000,2) + "," + String((float)packBasicInfo.CapacityRemainPercent,0) + String(" HTTP/1.0"));
+      https_client.println(String("GET /") + EXTERNAL_PATH + String("log.php?key=") + EXTERNAL_KEY + String("&stats=") + 
+        String(date) + 
+        "," + String(time) + 
+        "," + String((float)packBasicInfo.Amps/1000,2) + 
+        "," + String((float)packBasicInfo.CapacityRemainPercent,0) + 
+        "," + String((float)packBasicInfo.Amps/1000,2) + 
+        "," + String((float)packBasicInfo.Volts/1000,2) +
+        "," + String((float)packBasicInfo.CapacityRemainAh/1000,2) +  
+        String(" HTTP/1.0"));
       https_client.println(String("Host: ") + EXTERNAL_SERVER);
       https_client.println("Connection: close");
       https_client.println();
