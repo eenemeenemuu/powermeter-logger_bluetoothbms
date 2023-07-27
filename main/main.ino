@@ -115,10 +115,10 @@ void setup(){
         String(date) + 
         "," + String(time) + 
         "," + String((float)packBasicInfo.Amps/1000,2) + 
-        "," + String((float)packBasicInfo.CapacityRemainPercent,0) + 
-        "," + String((float)packBasicInfo.Amps/1000,2) + 
-        "," + String((float)packBasicInfo.Volts/1000,2) +
-        "," + String((float)packBasicInfo.CapacityRemainAh/1000,2) +  
+        "," + String((float)packBasicInfo.CapacityRemainAh/1000,2) + 
+        "," + String((float)packCellInfo.CellMax/1000,3) + 
+        "," + String((float)packCellInfo.CellMin/1000,3) +
+        "," + String((float)packCellInfo.CellAvg/1000,3) +  
         String(" HTTP/1.0"));
       https_client.println(String("Host: ") + EXTERNAL_SERVER);
       https_client.println("Connection: close");
