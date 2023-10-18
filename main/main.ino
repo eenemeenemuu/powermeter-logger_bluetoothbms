@@ -37,11 +37,11 @@
 #include "datatypes.h" // for brevity the BMS stuff is in this file
 #include <WiFi.h> // for WiFi
 #include <BLEDevice.h> // for BLE
-#include <WiFiClient.h> // for MQTT
 
 #include <driver/adc.h> // to read ESP battery voltage
 #include <rom/rtc.h> // to get reset reason
 
+#include <HTTPClient.h> // for HTTP
 #include <WiFiClientSecure.h> // for HTTPS
 #include "time.h" // to get current time
 
@@ -102,44 +102,51 @@ void setup(){
     Serial.println("Date: " + String(date));
     Serial.println("Time: " + String(time));
 
+    HTTPClient http_client;
     WiFiClientSecure https_client;
     https_client.setInsecure();
 
-    Serial.println("\nStarting connection to server...");
-    if (!https_client.connect(EXTERNAL_SERVER, 443)) {
-      Serial.println("Connection failed!");
-    } else {
-      Serial.println("Connected to server!");
-      // Make a HTTP request:
-      https_client.println(String("GET /") + EXTERNAL_PATH + String("log.php?key=") + EXTERNAL_KEY + String("&stats=") + 
-        String(date) + 
+    String stats_string = String(date) + 
         "," + String(time) + 
         "," + String((float)packBasicInfo.Amps/1000,2) + 
         "," + String((float)packBasicInfo.CapacityRemainAh/1000,2) + 
         "," + String((float)packCellInfo.CellMax/1000,3) + 
         "," + String((float)packCellInfo.CellMin/1000,3) +
-        "," + String((float)packCellInfo.CellAvg/1000,3) +  
-        String(" HTTP/1.0"));
-      https_client.println(String("Host: ") + EXTERNAL_SERVER);
-      https_client.println("Connection: close");
-      https_client.println();
+        "," + String((float)packCellInfo.CellAvg/1000,3); 
 
-      while (https_client.connected()) {
-        String line = https_client.readStringUntil('\n');
-        if (line == "\r") {
-          //Serial.println("headers received");
-          break;
+    Serial.println();
+    for (String url : urls) {
+      Serial.println(url.substring(0, url.indexOf("?")));
+      if (url.substring(0, 5) == "https") {
+        String external_server = url.substring(8).substring(0, url.substring(8).indexOf("/"));
+        String external_path = url.substring(8).substring(url.substring(8).indexOf("/"));
+        if (!https_client.connect(external_server.c_str(), 443)) {
+          Serial.println("Connection failed!");
+        } else {
+          Serial.println("Connected to server!");
+          https_client.println("GET " + external_path + stats_string + " HTTP/1.0");
+          https_client.println("Host: " + external_server);
+          https_client.println("Connection: close");
+          https_client.println();
+
+          while (https_client.connected()) {
+            String line = https_client.readStringUntil('\n');
+            if (line == "\r") {
+              //Serial.println("headers received");
+              break;
+            }
+          }
+          https_client.stop();
         }
+      } else {
+        String serverPath = url + stats_string;
+        http_client.begin(serverPath.c_str());
+        int httpResponseCode = http_client.GET();
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+        http_client.end();
       }
-      /*
-      // if there are incoming bytes available
-      // from the server, read them and print them:
-      while (https_client.available()) {
-        char c = https_client.read();
-        Serial.write(c);
-      }
-      */
-      https_client.stop();
+      Serial.println();
     }
   }
   Serial.println("All done, disconnecting.");

@@ -18,10 +18,8 @@
 #define WIFI_SSID "WIFI_SSID"
 #define WIFI_PASSWORD "WIFI_PASSWORD"
 
-// External host configuration
-#define EXTERNAL_SERVER "example.com" // external host for logging and display
-#define EXTERNAL_PATH "test_path/" // path on external host - must end with trailing slash (/)
-#define EXTERNAL_KEY "test_key" // auth key must match on external host
+// External host(s) configuration for logging and display; must end with with equal sign (=); auth key must match on external host, if required
+String urls[] = { "https://example.com/test_path/log.php?key=test_key&stats=", "http://example.local/log.php?stats=" }; 
 
 // Time settings
 #define TIME_ntpServer "pool.ntp.org"
