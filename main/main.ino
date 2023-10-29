@@ -90,7 +90,9 @@ void setup(){
   Serial.println("IP address: " + IPAddressString(WiFi.localIP()));
 
   // get current time
-  configTime(TIME_gmtOffset_sec, TIME_daylightOffset_sec, TIME_ntpServer);
+  configTime(0, 0, TIME_ntpServer); // 0, 0 because we will use TZ in the next line
+  setenv("TZ", TIME_TZ, 1);         // Set environment variable with your time zone
+  tzset();                          // Credits: https://werner.rothschopf.net/microcontroller/202103_arduino_esp32_ntp_en.htm
   struct tm timeinfo;
   char date[20];
   char time[20];

@@ -22,9 +22,8 @@
 String urls[] = { "https://example.com/test_path/log.php?key=test_key&stats=", "http://example.local/log.php?stats=" }; 
 
 // Time settings
-#define TIME_ntpServer "pool.ntp.org"
-#define TIME_gmtOffset_sec 3600
-#define TIME_daylightOffset_sec 3600
+#define TIME_ntpServer "de.pool.ntp.org"          // choose the best fitting NTP server pool for your country
+#define TIME_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"  // choose your time zone from this list: https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
 
 // watchdog timeout
 #define WATCHDOG_TIMEOUT (BLE_TIMEOUT+10*1000) // go to sleep after x seconds
